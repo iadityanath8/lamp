@@ -1,4 +1,4 @@
-# Your Library Name
+# Lamp
 
 A high-performance numerical computation library written in C, featuring `NDArray`, `Tensor`, and `Value` objects with automatic differentiation. This library is designed for deep learning, scientific computing, and general-purpose numerical operations.
 
