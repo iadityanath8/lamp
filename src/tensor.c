@@ -14,7 +14,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "../include/tensor.h"
-
+#include <stdbool.h>
 tensor *tensor_init(ndarray *_arr)
 {
     tensor *a = ALLOC(tensor, 1);
@@ -50,7 +50,6 @@ void dump_tensor(const tensor *t, int indent_level)
 
     printf("%sTensor @ %p {\n", indent, (void *)t);
 
-    // Print data
     printf("%s  data: ", indent);
     if (t->data)
     {
@@ -62,7 +61,6 @@ void dump_tensor(const tensor *t, int indent_level)
         printf("NULL\n");
     }
 
-    // Print gradient
     printf("%s  grad: ", indent);
     if (t->grad)
     {
@@ -116,6 +114,58 @@ void add_backward(tensor *self)
         }
         ndarray_add_vector_inplace(child->grad, self->grad);
     }
+}
+
+void mul_backward(tensor *self)
+{
+    tensor **chld = self->childrens;
+    ndarray *z = self->data; 
+    ndarray *grad_z = self->grad;
+
+    for (size_t i = 0; i < self->num_childrens; i++)
+    {
+        tensor *child = chld[i];
+        ndarray *x_i = child->data;
+
+        if (child->grad == NULL)
+        {
+            child->grad = ndarray_zero(z->shape, z->dim);
+        }
+
+        ndarray *temp = ndarray_div_vector(z, x_i); 
+        ndarray_mul_vector_inplace(temp, grad_z); 
+        ndarray_add_vector_inplace(child->grad, temp);
+
+        ndarray_free(temp);
+    }
+}
+
+void matmul_backward(tensor* self) {
+    tensor* a = self->childrens[0];
+    tensor* b = self->childrens[1];
+    ndarray* grad_out = self->grad;
+
+
+    if (!a->grad) {
+        a->grad = ndarray_zero(a->data->shape, a->data->dim);
+    }
+    if (!b->grad) {
+        b->grad = ndarray_zero(b->data->shape, b->data->dim);  
+    }
+
+    // dA = grad_out @ B^T
+    ndarray* b_trans = ndarray_matrix_transpose(b->data);
+    ndarray* grad_a = ndarray_matmul(grad_out, b_trans,false, true);
+    ndarray_add_vector_inplace(a->grad, grad_a);
+    ndarray_free(b_trans);
+    ndarray_free(grad_a);
+        
+    // dB = A^T @ grad_out
+    ndarray* a_trans = ndarray_matrix_transpose(a->data);
+    ndarray* grad_b = ndarray_matmul(a_trans, grad_out,true,false);
+    ndarray_add_vector_inplace(b->grad, grad_b);
+    ndarray_free(a_trans);
+    ndarray_free(grad_b);
 }
 
 tensor *t_add(int n, ...)
@@ -173,5 +223,19 @@ tensor *t_mul(int n, ...)
     tensor *res = tensor_init(_m);
     res->childrens = childrens;
     res->num_childrens = n;
+    res->bk = mul_backward;
     return res;
 }
+
+tensor* t_matmul(tensor* a, tensor* b) {
+    ASSERT(a->data->dim == 2 && b->data->dim == 2);
+    ndarray*c =  ndarray_matmul(a->data,b->data,false,false);        
+    tensor* out = tensor_init(c);
+
+    out->childrens = ALLOC(tensor* , 2);
+    out->num_childrens = 2;
+    out->childrens[0] = a;
+    out->childrens[1] = b;
+    out->bk = matmul_backward;
+    return out;
+}   

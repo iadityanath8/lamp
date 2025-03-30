@@ -1,7 +1,7 @@
 # Compiler and Flags
 CC = gcc
 CFLAGS = -O3 -march=native -fopenmp -mavx -mfma
-LDFLAGS =  -lcublas -lcudart -lm#-lopenblas //-I/usr/include/openblas -L/usr/lib/x86_64-linux-gnu
+LDFLAGS =  -lm -lcublas -lcudart #-lopenblas -I/usr/include/openblas -L/usr/lib/x86_64-linux-gnu
 
 
 SRC = main.c ./src/ndarray.c ./src/value.c ./src/tensor.c

@@ -19,9 +19,11 @@
 #include <omp.h>
 #include <immintrin.h>
 #include <assert.h>
+#include <stdbool.h>
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <alloca.h>
+#include <math.h>
 
 static void compute_stride(ndarray *_arr)
 {
@@ -150,8 +152,80 @@ ndarray ndarray_no_init(int *shape, int dim)
     return _a;
 }
 
+bool increment_indices(int* indices, int* shape, int dim) {
+    for (int i = dim - 1; i >= 0; i--) {
+        if (++indices[i] < shape[i]) return true;  
+        indices[i] = 0;  
+    }
+    return false;  
+}
+
+ndarray* ndarray_slice(ndarray* _arr, int* start, int* end, int dim) {
+    ASSERT(dim == _arr->dim);
+    
+    ndarray* _brr = ALLOC(ndarray, 1);
+    _brr->dim = dim;
+
+    int offset = 0;
+    int total_elements = 1;
+    
+    for (int i = 0; i < dim; i++) {
+        offset += start[i] * _arr->strides[i];  
+        _brr->shape[i] = end[i] - start[i];    
+        _brr->strides[i] = _arr->strides[i];  
+        total_elements *= _brr->shape[i];
+    }
+    
+    _brr->elements = total_elements;
+    
+    _brr->val = ALLOC(float, total_elements);
+    
+    int indices[MAX_DIM] = {0};  
+    int i = 0;
+    do {
+        int src_offset = offset;
+        for (int j = 0; j < dim; j++) {
+            src_offset += indices[j] * _arr->strides[j];
+        }
+        _brr->val[i++] = _arr->val[src_offset];
+    } while (increment_indices(indices, _brr->shape, dim));
+    
+    return _brr;
+}
+
+ndarray* ndarray_get(ndarray* _arr, int* shape,int dim) {
+    _inner_items arr = _arr->val;
+    int _dim         = _arr->dim;
+    ASSERT(dim <= _dim);
+    int* strd        = _arr->strides;
+    int* shp         = _arr->shape;
+    int  n           = _arr->elements;
+    int nd           = _arr->dim - dim;
+    int total        = 1;
+
+    ndarray* _brr    = ALLOC(ndarray,1);
+    int* bshape      = _brr->shape;
+    int* bstrd       = _brr->strides;
+    _brr->dim        = nd;
+
+    int offset = 0;
+    for (int i = 0;i < dim;i++) offset += shape[i] * strd[i];
+    
+    for (int i = dim;i < _dim;i++) {
+      bshape[i-dim] = shp[i];
+      bstrd[i-dim]  = strd[i];
+      total *= bshape[i-dim];
+    }
+    _brr->val = _arr->val + offset;
+    _brr->elements = total;
+    return _brr;
+}
+
 /** Powered by gpu using cublas library */
-int matmul__cublas_(float *h_A, float *h_B, float *h_C, int M, int N, int K)
+
+int matmul__cublas_(float *h_A, float *h_B, float *h_C, 
+                     int M, int N, int K, 
+                     bool trans_A, bool trans_B)
 {
     cublasHandle_t handle;
     cublasStatus_t status;
@@ -178,43 +252,27 @@ int matmul__cublas_(float *h_A, float *h_B, float *h_C, int M, int N, int K)
     float alpha = 1.0f;
     float beta = 0.0f;
 
-    // cudaEvent_t start, stop;
-    // cudaEventCreate(&start);
-    // cudaEventCreate(&stop);
-
-    // cudaEventRecord(start, 0);
+    // Set cuBLAS operation flags based on transposition
+    cublasOperation_t op_A = trans_A ? CUBLAS_OP_T : CUBLAS_OP_N;
+    cublasOperation_t op_B = trans_B ? CUBLAS_OP_T : CUBLAS_OP_N;
 
     // Perform matrix multiplication: C = A * B
-    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N,
+    cublasSgemm(handle, op_B, op_A,  // Note: cuBLAS uses column-major order
                 N, M, K,
-                &alpha, d_B, N,
-                d_A, K,
-                &beta, d_C, N);
-
-    // cudaEventRecord(stop, 0);
-    // cudaEventSynchronize(stop);
-
-    // float milliseconds = 0;
-    // cudaEventElapsedTime(&milliseconds, start, stop);
-
-    // double flops = 2.0 * (double)M * (double)N * (double)K;
-    // double gflops = (flops / (milliseconds / 1000.0)) / 1e9;
-
-    // printf("Matrix multiplication (%d x %d) took %.3f ms\n", M, N, milliseconds);
-    // printf("GFLOPS: %.3f\n", gflops);
+                &alpha, d_B, trans_B ? K : N,
+                        d_A, trans_A ? M : K,
+                &beta,  d_C, N);
 
     cublasGetMatrix(M, N, sizeof(float), d_C, M, h_C, M);
 
     cudaFree(d_A);
     cudaFree(d_B);
     cudaFree(d_C);
-
-    // cudaEventDestroy(start);
-    // cudaEventDestroy(stop);
-
     cublasDestroy(handle);
+
     return 0;
 }
+
 
 ndarray *ndarray_init(int *shape, int dim)
 {
@@ -246,7 +304,7 @@ NDARRAY_INLINE void ndarray_fill(ndarray *_arr, float _v)
     }
 }
 
-NDARRAY_INLINE float ndarray_get(ndarray *arr, int *shape)
+NDARRAY_INLINE float ndarray_get_element(ndarray *arr, int *shape)
 {
     size_t offset = 0;
     int *strd = arr->strides;
@@ -273,7 +331,7 @@ NDARRAY_INLINE float ndarray_get(ndarray *arr, int *shape)
         }
     }
 
-    assert(offset < arr->elements);
+    ASSERT(offset < arr->elements);
     return arr->val[offset];
 }
 
@@ -477,16 +535,12 @@ NDARRAY_INLINE void ndarray_negate_inplace(ndarray *_arr)
     }
 }
 
-__attribute__((deprecated)) void naive_matmul(float *A, float *B, float *C, int M, int N, int K)
-{
-    for (int i = 0; i < M; i++)
-    {
-        for (int j = 0; j < N; j++)
-        {
+void naive_matmul(float *A, float *B, float *C, int M, int N, int K) {
+    for (int i = 0; i < M; i++) {
+        for (int j = 0; j < N; j++) {
             float sum = 0;
-            for (int p = 0; p < K; p++)
-            {
-                sum += A[i * K + p] * B[p * N + j];
+            for (int p = 0; p < K; p++) {
+                sum += A[i * K + p] * B[p * N + j];  
             }
             C[i * N + j] = sum;
         }
@@ -498,7 +552,7 @@ __attribute__((deprecated)) void naive_matmul(float *A, float *B, float *C, int 
  *  matrix multiplication using its own version as well as it will soon procvide openblas or intel MKL
  *  version
  */
-ndarray *ndarray_matmul(ndarray *_arr, ndarray *_brr)
+ndarray *ndarray_matmul(ndarray *_arr, ndarray *_brr,bool ta,bool tb)
 {
     assert(_arr->shape[1] == _brr->shape[0]);
 
@@ -508,10 +562,11 @@ ndarray *ndarray_matmul(ndarray *_arr, ndarray *_brr)
 
     ndarray *_crr = ndarray_init((int[]){N, M}, 2);
 
-    /** using cuda backend  */
-    matmul__cublas_(_arr->val, _brr->val, _crr->val, M, N, K);
+    // Assuming row-major order, set transA and transB to false
+    matmul__cublas_(_arr->val, _brr->val, _crr->val, N, M, K, ta, tb);
     return _crr;
 }
+
 
 void ndarray_dump(const struct ndarray *arr)
 {
@@ -545,6 +600,7 @@ void ndarray_dump(const struct ndarray *arr)
     }
 }
 
+__attribute__((deprecated))
 void ndarray_transpose(ndarray *arr)
 {
     if (arr->dim < 2)
@@ -564,14 +620,37 @@ void ndarray_transpose(ndarray *arr)
     }
 }
 
-ndarray *ndarray_clone(ndarray *_arr)
-{
-    ndarray *_crr = ndarray_init(_arr->shape, _arr->dim);
-    float *a = _arr->val;
-    float *c = _crr->val;
-    _crr->elements = _arr->elements;
+NDARRAY_INLINE void ndarray_matrix_transpose_inplace(ndarray* _arr) {
+    ASSERT(_arr->dim == 2);
 
-    memcpy(c, a, sizeof(float) * _arr->elements);
+    int temp = _arr->shape[0];
+    _arr->shape[0] = _arr->shape[1];
+    _arr->shape[1] = temp;
+
+    temp = _arr->strides[0];
+    _arr->strides[0] = _arr->strides[1];
+    _arr->strides[1] = temp;
+}
+
+
+ndarray *ndarray_clone(ndarray *_arr) {
+    if (_arr->elements <= 0) {
+        fprintf(stderr, "ndarray_clone: Invalid element count\n");
+        return NULL;
+    }
+
+    ndarray *_crr = ndarray_init(_arr->shape, _arr->dim);
+    _crr->elements = _arr->elements;
+    memcpy(_crr->val, _arr->val, sizeof(float) * _arr->elements);    
+    memcpy(_crr->strides, _arr->strides, sizeof(int) * _arr->dim);
+    return _crr;
+}
+
+
+ndarray* ndarray_matrix_transpose(ndarray* _arr) {
+    ndarray* _cl = ndarray_clone(_arr);
+    ndarray_matrix_transpose_inplace(_cl);
+    return _cl;
 }
 
 void ndarray_free(ndarray *_arr)

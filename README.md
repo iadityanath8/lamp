@@ -27,10 +27,9 @@ make
 #include <stdio.h>
 
 int main() {
-    NDArray *a = ndarray_create(2, 2);
+    NDArray *a = ndarray_init_with_arr(SHP(2,2),2,ARR(1,2,3,4));
     ndarray_put(a, 0, 0, 1.0);
     ndarray_put(a, 0, 1, 2.0);
-    ndarray_print(a);
     ndarray_free(a);
     return 0;
 }
@@ -42,8 +41,8 @@ int main() {
 #include <stdio.h>
 
 int main() {
-    tensor* a = tensor(ARR(1, 2, 3,5), SHP(2, 2),2); // create a 2x2 matrix 
-    tensor* b = tensor(ARR(1, 2, 3,5), SHP(2, 2),2); // create a 2x2 matrix 
+    tensor* a = tensor_init(ARR(1, 2, 3,5), SHP(2, 2),2); // create a 2x2 matrix 
+    tensor* b = tensor_init(ARR(1, 2, 3,5), SHP(2, 2),2); // create a 2x2 matrix 
     
     tensor* c = T_ADD(a, b);   // macro can take variable number of arguments 
     return 0;
@@ -96,7 +95,7 @@ int main() {
 - **Autograd Enhancements**: Extend `Value` and `Tensor` to support complex computational graphs.
 - **Custom Preprocessor Wrapper Compiler**: Enable template-based programming for high performance.
 - **Shared Library (DLL) and Static Library**: Provide easy linking for integration into other projects.
-- **Integration with Other Libraries**: Explore OpenMP and Vulkan for parallel and graphics-based computation.
+- **Integration with Other Libraries**: OpenBlas MKL for only CPU optimized performance also cuda/ Cublas for GPU.
 
 ## License
 GNUv3 License. See `LICENSE` for details.

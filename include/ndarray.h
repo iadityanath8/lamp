@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Your Name <iadityanath8@gmail.com>
+// Copyright (C) 2024 Nemesis <iadityanath8@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -21,12 +21,13 @@
 #include <assert.h>
 #include "utils.h"
 #include <stdio.h>
+#include <stdbool.h>
 #define NDARRAY_INLINE inline __attribute__((always_inline))
 #define MAX_DIM 10
 
 typedef struct ndarray ndarray;
 typedef float *_inner_items;
-
+ 
 // basic ndarray struct in here
 struct ndarray
 {
@@ -40,7 +41,7 @@ struct ndarray
     /** MAX support dimension is 10 */
     int shape[MAX_DIM];
     int strides[MAX_DIM];
-
+    
     /**  (x,y,z,....) dimensions **/
     int dim;
     int elements;
@@ -54,14 +55,22 @@ ndarray *ndarray_init_alloc_arr(int *shape, int dim, float *arr); // allocated a
 ndarray ndarray_no_init(int *shape, int dim);
 ndarray* ndarray_clone(ndarray* _arr);
 
+/** allocates memory on the heap user have to free for this **/
+ndarray* ndarray_slice(ndarray* _arr, int* start, int* end, int dim);
+
+
 ndarray* ndarray_zero(int* shape, int dim);
 ndarray* ndarray_ones(int* shape, int dim);
-void ndarray_transpose(ndarray* _arr);
+//__attribute__((deprecated)) void ndarray_transpose(ndarray* _arr);
+/** Assumming this is a matrix  **/
+ndarray* ndarray_matrix_transpose(ndarray* _arr);
+void ndarray_matrix_transpose_inplace(ndarray* _arr);
 
 void ndarray_fill(ndarray *_arr, float _v);
 
-float ndarray_get(ndarray *arr, int *shape);
+float ndarray_get_element(ndarray *arr, int *shape);
 void ndarray_put(ndarray *arr, int *shape, float _val);
+ndarray* ndarray_get(ndarray* _arr, int* shape,int dim);
 
 void ndarray_add_scalar(ndarray *_arr, float _adder);
 ndarray *ndarray_add_vector(ndarray *_arr, ndarray *_brr);
@@ -83,13 +92,13 @@ ndarray *ndarray_pow(ndarray *_arr, float pow);
 void ndarray_pow_inplace(ndarray *_arr, float pow);
 
 /** Only 2d matrix operations */
-ndarray *ndarray_matmul(ndarray *_arr, ndarray *_brr);
-
+ndarray *ndarray_matmul(ndarray *_arr, ndarray *_brr,bool ta, bool tb);
 __attribute__((deprecated)) void matmul_tiled(float *A, float *B, float *C, int rowsA, int colsB, int colsA);
-__attribute__((deprecated)) void matmul_fast(float *restrict A, float *restrict B, float *restrict C, size_t rowsA, size_t colsA, size_t colsB);
+//__attribute__((deprecated)) void matmul_fast(float *restrict A, float *restrict B, float *restrict C, size_t rowsA, size_t colsA, size_t colsB);
 
 void ndarray_free(ndarray *_arr);
 
+/** only for debugging purpose in here **/
 void ndarray_dump(const struct ndarray *arr);
 
 void ndarray_random(ndarray* _arr, float _min, float _max);

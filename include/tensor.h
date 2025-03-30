@@ -57,6 +57,8 @@ tensor* t_sub(int n, ...);
 tensor* t_mul(int n, ...);
 tensor* t_div(int n, ...);
 
+/* right now only 2 parameter with only matrix support*/
+tensor* t_matmul(tensor* a, tensor* b);
 
 void dump_tensor(const tensor* t, int indent_level);
 
